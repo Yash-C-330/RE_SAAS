@@ -1,0 +1,280 @@
+{
+  "name": "Batch Rent Reminders (Multi-Landlord)",
+  "description": "Processes rent reminders for multiple landlords in a single cron run. Each landlord is fetched from scheduler API and processed with isolated callbacks.",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Schedule Trigger - Daily 8AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1200,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ ($env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000') + '/api/automations/scheduler/landlords?automationId=rent-reminders' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.N8N_SCHEDULER_API_KEY || $env.N8N_CALLBACK_SECRET || '' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "2",
+      "name": "Fetch Active Landlords",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -980,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const landlords = Array.isArray($json.landlords) ? $json.landlords : [];\nreturn landlords.map((landlord) => ({ json: landlord }));"
+      },
+      "id": "3",
+      "name": "Expand Landlords",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -760,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ ($env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000') + '/api/automations/lease-candidates' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-landlord-id",
+              "value": "={{ $json.landlordId }}"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.N8N_SCHEDULER_API_KEY || $env.N8N_CALLBACK_SECRET || '' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "4",
+      "name": "Fetch Lease Candidates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -540,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const candidates = Array.isArray($json.candidates) ? $json.candidates : [];\nconst landlordId = $item(0).$node[\"Expand Landlords\"].json.landlordId ?? null;\nconst landlordName = $item(0).$node[\"Expand Landlords\"].json.landlordName ?? null;\nconst now = new Date().toISOString();\n\nif (candidates.length === 0) {\n  return [{\n    json: {\n      landlordId,\n      landlordName,\n      runAt: now,\n      noCandidate: true\n    }\n  }];\n}\n\nreturn candidates.map((candidate) => ({\n  json: {\n    ...candidate,\n    landlordId: candidate.landlordId || landlordId,\n    landlordName: candidate.landlordName || landlordName,\n    runAt: now,\n    noCandidate: false\n  }\n}));"
+      },
+      "id": "5",
+      "name": "Transform Lease Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $json;\n\nlet template = 'friendly';\nlet needsLandlordAlert = false;\n\nif (item.overdueDays >= 7) {\n  template = 'legal_notice';\n  needsLandlordAlert = true;\n} else if (item.overdueDays >= 3) {\n  template = 'firm_overdue';\n  needsLandlordAlert = true;\n} else if (item.overdueDays >= 1) {\n  template = 'overdue';\n} else if (item.daysToDue <= 1) {\n  template = 'due_tomorrow';\n} else if (item.daysToDue <= 3) {\n  template = 'due_3_days';\n}\n\nreturn [{\n  json: {\n    ...item,\n    template,\n    needsLandlordAlert\n  }\n}];"
+      },
+      "id": "6",
+      "name": "Classify Reminder Type",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -100,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "seconds"
+      },
+      "id": "7",
+      "name": "Wait - Twilio Rate Limit",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        100,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const records = $input.all().map((row) => row.json);\nconst runStamp = $now.toISO();\nconst grouped = new Map();\n\nfor (const record of records) {\n  const landlordId = record.landlordId ?? 'unknown';\n  const current = grouped.get(landlordId) || {\n    landlordId: record.landlordId ?? null,\n    remindersSet: 0,\n    overdueAlerts: 0,\n  };\n\n  if (!record.noCandidate) {\n    current.remindersSet += 1;\n  }\n\n  if (record.needsLandlordAlert) {\n    current.overdueAlerts += 1;\n  }\n\n  grouped.set(landlordId, current);\n}\n\nreturn Array.from(grouped.values()).map((summary) => ({\n  json: {\n    workflowName: 'rent-reminders',\n    trigger: 'cron',\n    outcome: summary.remindersSet > 0 ? 'success' : 'skipped',\n    landlordId: summary.landlordId,\n    correlationId: $execution.id,\n    idempotencyKey: `rent-reminders:batch:${summary.landlordId}:${runStamp}:${$execution.id}`,\n    details: {\n      batchMode: true,\n      remindersSet: summary.remindersSet,\n      overdueAlerts: summary.overdueAlerts,\n      runAt: runStamp\n    }\n  }\n}));"
+      },
+      "id": "8",
+      "name": "Build Callback Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.N8N_APP_CALLBACK_URL || $env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000') + '/api/webhooks/n8n' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.N8N_CALLBACK_SECRET || '' }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "9",
+      "name": "HTTP - Callback to App",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger - Daily 8AM": {
+      "main": [
+        [
+          {
+            "node": "Fetch Active Landlords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Active Landlords": {
+      "main": [
+        [
+          {
+            "node": "Expand Landlords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Landlords": {
+      "main": [
+        [
+          {
+            "node": "Fetch Lease Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Lease Candidates": {
+      "main": [
+        [
+          {
+            "node": "Transform Lease Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Lease Data": {
+      "main": [
+        [
+          {
+            "node": "Classify Reminder Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Reminder Type": {
+      "main": [
+        [
+          {
+            "node": "Wait - Twilio Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait - Twilio Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Build Callback Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Callback Summary": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Callback to App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "batch-v2",
+  "meta": {
+    "instanceId": "re-saas-multi-tenant"
+  },
+  "id": "rent-reminders-batch-workflow",
+  "pinData": {}
+}

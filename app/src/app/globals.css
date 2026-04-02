@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+:root {
+  --sand-50: #faf7f2;
+  --sand-100: #f3ece2;
+  --sand-200: #e8dbc9;
+  --ink-900: #191b1e;
+  --ink-700: #3c4249;
+  --ink-500: #626a73;
+  --mint-500: #1fb285;
+  --mint-600: #15936d;
+  --amber-500: #d88f26;
+  --card: #ffffff;
+  --ring: #1fb285;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sora), "Segoe UI", Tahoma, sans-serif;
+  color: var(--ink-900);
+  background:
+    radial-gradient(1200px 600px at -10% -10%, #e8f9f3 0%, transparent 55%),
+    radial-gradient(900px 500px at 110% -20%, #fbe8c8 0%, transparent 55%),
+    linear-gradient(180deg, var(--sand-50), #fefdfb);
+}
+
+.grain-overlay {
+  position: relative;
+}
+
+.grain-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(25, 27, 30, 0.04) 0.5px, transparent 0.5px);
+  background-size: 3px 3px;
+  opacity: 0.3;
+}
+
+.glass-card {
+  border-radius: 1rem;
+  border: 1px solid rgba(98, 106, 115, 0.16);
+  background: rgba(255, 255, 255, 0.84);
+  backdrop-filter: blur(6px);
+}
+
+.brand-gradient {
+  background: linear-gradient(120deg, var(--mint-600), var(--amber-500));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+

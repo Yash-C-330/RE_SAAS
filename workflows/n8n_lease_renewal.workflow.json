@@ -1,0 +1,225 @@
+{
+  "name": "Lease Renewal Campaign (Cron + Callback)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 10
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Schedule Trigger - Daily 10AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -960,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Replace with PostgreSQL query against active leases in production.\nconst rows = [\n  { leaseId: 'lease-90', landlordId: '00000000-0000-0000-0000-000000000001', tenantName: 'Alex', email: 'alex@example.com', phone: '+15555550101', daysToExpiry: 90, hasResponded: false },\n  { leaseId: 'lease-30', landlordId: '00000000-0000-0000-0000-000000000001', tenantName: 'Sam', email: 'sam@example.com', phone: '+15555550102', daysToExpiry: 30, hasResponded: false }\n];\n\nreturn rows.map((row) => ({ json: row }));"
+      },
+      "id": "2",
+      "name": "Load Expiring Leases",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $json;\n\nif (item.hasResponded) {\n  return [{ json: { ...item, stage: 'skip', action: 'already_responded' } }];\n}\n\nlet stage = 'none';\nlet action = 'skip';\n\nif (item.daysToExpiry <= 30) {\n  stage = '30-day-final-notice';\n  action = 'send_final_notice';\n} else if (item.daysToExpiry <= 60) {\n  stage = '60-day-followup';\n  action = 'send_followup';\n} else if (item.daysToExpiry <= 90) {\n  stage = '90-day-offer';\n  action = 'send_offer';\n}\n\nreturn [{ json: { ...item, stage, action } }];"
+      },
+      "id": "3",
+      "name": "Determine Renewal Stage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "skip",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "4",
+      "name": "IF - Action Required",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "7",
+      "name": "Merge Action and Skip",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -20,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const records = $input.all().map((row) => row.json);\nconst actioned = records.filter((r) => r.action !== 'skip');\nconst runStamp = $now.toISO();\n\nconst summary = {\n  offered: actioned.filter((r) => r.stage === '90-day-offer').length,\n  followedUp: actioned.filter((r) => r.stage === '60-day-followup').length,\n  finalNotices: actioned.filter((r) => r.stage === '30-day-final-notice').length,\n  skipped: records.length - actioned.length\n};\n\nreturn [{\n  json: {\n    workflowName: 'lease-renewal',\n    trigger: 'cron',\n    outcome: 'success',\n    landlordId: records[0]?.landlordId ?? null,\n    correlationId: $execution.id,\n    idempotencyKey: `lease-renewal:${runStamp}:${$execution.id}`,\n    details: { ...summary, runAt: runStamp }\n  }\n}];"
+      },
+      "id": "5",
+      "name": "Build Callback Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.N8N_APP_CALLBACK_URL || $env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000') + '/api/webhooks/n8n' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.N8N_CALLBACK_SECRET || '' }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "6",
+      "name": "HTTP - Callback to App",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        240
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger - Daily 10AM": {
+      "main": [
+        [
+          {
+            "node": "Load Expiring Leases",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Expiring Leases": {
+      "main": [
+        [
+          {
+            "node": "Determine Renewal Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determine Renewal Stage": {
+      "main": [
+        [
+          {
+            "node": "IF - Action Required",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Action Required": {
+      "main": [
+        [
+          {
+            "node": "Merge Action and Skip",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Action and Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Action and Skip": {
+      "main": [
+        [
+          {
+            "node": "Build Callback Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Callback Summary": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Callback to App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "fe6b7a57-43d9-4c1f-8f90-5e3d0115f084",
+  "meta": {
+    "instanceId": "re-saas"
+  },
+  "id": "lease-renewal-workflow",
+  "pinData": {}
+}

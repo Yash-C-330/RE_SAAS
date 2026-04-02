@@ -1,0 +1,32 @@
+{
+  "maintenanceRequestFromApp": {
+    "ticketId": "11111111-1111-1111-1111-111111111111",
+    "name": "Test Tenant",
+    "email": "tenant@example.com",
+    "phone": "+15555550100",
+    "description": "Water leaking below kitchen sink.",
+    "callbackUrl": "http://localhost:3000/api/webhooks/n8n",
+    "callbackSecret": "replace-with-callback-secret"
+  },
+  "maintenanceSuccessCallbackToApp": {
+    "workflowName": "maintenance-router",
+    "trigger": "webhook",
+    "outcome": "success",
+    "details": {
+      "category": "plumbing",
+      "urgency": "high",
+      "status": "assigned"
+    },
+    "ticketId": "11111111-1111-1111-1111-111111111111"
+  },
+  "maintenanceFailureCallbackToApp": {
+    "workflowName": "maintenance-router",
+    "trigger": "webhook",
+    "outcome": "failed",
+    "details": {
+      "reason": "openai-timeout",
+      "status": "open"
+    },
+    "ticketId": "11111111-1111-1111-1111-111111111111"
+  }
+}

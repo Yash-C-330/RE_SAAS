@@ -1,0 +1,505 @@
+{
+  "name": "Maintenance Router (App Callback)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "maintenance-request",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook - Maintenance Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1320,
+        200
+      ],
+      "webhookId": "maintenance-request"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-check",
+              "leftValue": "={{ $json.headers[\"x-n8n-api-key\"] || $json.headers[\"x-api-key\"] || \"\" }}",
+              "rightValue": "={{ $env.N8N_API_KEY || \"\" }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "2",
+      "name": "IF - API Key Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1080,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"error\":\"Unauthorized\"}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "3",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.3,
+      "position": [
+        -860,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nconst description = (input.description ?? '').toLowerCase();\n\nlet urgency = 'normal';\nlet category = 'cosmetic';\nlet estimatedCost = 120;\n\nif (/(fire|smoke|gas|flood|burst|sparks|electrocute|no power)/.test(description)) {\n  urgency = 'emergency';\n  estimatedCost = 500;\n}\n\nif (/(leak|pipe|toilet|sink|drain|water)/.test(description)) {\n  category = 'plumbing';\n}\nif (/(breaker|switch|outlet|wiring|electric|light)/.test(description)) {\n  category = 'electrical';\n}\nif (/(ac|air|heat|hvac|thermostat|furnace)/.test(description)) {\n  category = 'hvac';\n}\nif (/(fridge|refrigerator|oven|dishwasher|washer|dryer)/.test(description)) {\n  category = 'appliance';\n}\n\nif (urgency !== 'emergency' && /(urgent|asap|today|immediately)/.test(description)) {\n  urgency = 'high';\n  estimatedCost = 250;\n}\n\nconst summary = input.description\n  ? String(input.description).slice(0, 120)\n  : 'Maintenance request';\n\nreturn [{\n  json: {\n    ticketId: input.ticketId,\n    workflowRunId: input.workflowRunId ?? null,\n    correlationId: input.correlationId ?? null,\n    name: input.name ?? '',\n    email: input.email ?? '',\n    phone: input.phone ?? '',\n    description: input.description ?? '',\n    callbackUrl: input.callbackUrl,\n    callbackSecret: input.callbackSecret,\n    category,\n    urgency,\n    estimatedCost,\n    summary\n  }\n}];"
+      },
+      "id": "4",
+      "name": "Classify (MVP Rules)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -840,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.urgency }}",
+              "rightValue": "emergency",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "5",
+      "name": "IF - Emergency",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -620,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "route-action-emergency",
+              "name": "routeAction",
+              "value": "Call + SMS landlord immediately; page on-call vendor.",
+              "type": "string"
+            },
+            {
+              "id": "status-emergency",
+              "name": "status",
+              "value": "assigned",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6",
+      "name": "Set - Emergency Route",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -400,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.urgency }}",
+              "rightValue": "high",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "7",
+      "name": "IF - High",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -400,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "route-action-high",
+              "name": "routeAction",
+              "value": "Notify landlord within 1 hour and assign preferred vendor.",
+              "type": "string"
+            },
+            {
+              "id": "status-high",
+              "name": "status",
+              "value": "assigned",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8",
+      "name": "Set - High Route",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -180,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.urgency }}",
+              "rightValue": "normal",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "9",
+      "name": "IF - Normal",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -180,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "route-action-normal",
+              "name": "routeAction",
+              "value": "Add to daily digest and schedule vendor assignment.",
+              "type": "string"
+            },
+            {
+              "id": "status-normal",
+              "name": "status",
+              "value": "open",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "10",
+      "name": "Set - Normal Route",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        40,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "route-action-low",
+              "name": "routeAction",
+              "value": "Queue for weekly review.",
+              "type": "string"
+            },
+            {
+              "id": "status-low",
+              "name": "status",
+              "value": "open",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "11",
+      "name": "Set - Low Route",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        40,
+        390
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.callbackSecret }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { workflowName: 'maintenance-router', trigger: 'webhook', outcome: 'success', details: { category: $json.category, urgency: $json.urgency, status: $json.status, routeAction: $json.routeAction, estimatedCost: $json.estimatedCost, summary: $json.summary }, ticketId: $json.ticketId, workflowRunId: $json.workflowRunId, correlationId: $json.correlationId, idempotencyKey: 'maintenance-router:' + ($json.ticketId || 'no-ticket') + ':' + ($execution.id || $now.toISO()) } }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "12",
+      "name": "HTTP - Callback to App",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        180
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true,\"ticketId\":$json.ticketId,\"status\":$json.status,\"urgency\":$json.urgency}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "13",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.3,
+      "position": [
+        500,
+        180
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Maintenance Request": {
+      "main": [
+        [
+          {
+            "node": "IF - API Key Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - API Key Valid": {
+      "main": [
+        [
+          {
+            "node": "Classify (MVP Rules)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify (MVP Rules)": {
+      "main": [
+        [
+          {
+            "node": "IF - Emergency",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Emergency": {
+      "main": [
+        [
+          {
+            "node": "Set - Emergency Route",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF - High",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Emergency Route": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Callback to App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - High": {
+      "main": [
+        [
+          {
+            "node": "Set - High Route",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF - Normal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - High Route": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Callback to App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Normal": {
+      "main": [
+        [
+          {
+            "node": "Set - Normal Route",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - Low Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Normal Route": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Callback to App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Low Route": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Callback to App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Callback to App": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d38c7af5-3377-4d7f-9013-9da0190d11ac",
+  "meta": {
+    "instanceId": "re-saas"
+  },
+  "id": "maintenance-router-workflow",
+  "pinData": {}
+}

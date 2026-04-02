@@ -1,0 +1,152 @@
+{
+  "name": "Monthly Owner Reports (Cron + Callback)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Schedule Trigger - Daily 6AM (Set to monthly in production)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -940,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Replace with SQL nodes for rent_payments, maintenance_tickets, and units.\nconst summary = {\n  landlordId: '00000000-0000-0000-0000-000000000001',\n  period: 'previous_month',\n  rentCollected: 12450,\n  maintenanceCost: 1430,\n  occupancyRate: 0.92,\n  overdueRent: 850\n};\n\nsummary.noi = summary.rentCollected - summary.maintenanceCost;\nsummary.alerts = [];\n\nif (summary.occupancyRate < 0.9) summary.alerts.push('occupancy-risk');\nif (summary.maintenanceCost > summary.rentCollected * 0.2) summary.alerts.push('maintenance-cost-spike');\n\nreturn [{ json: summary }];"
+      },
+      "id": "2",
+      "name": "Aggregate KPI Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\n\nconst executiveSummary = `Collected $${data.rentCollected} in rent with NOI of $${data.noi}. Occupancy rate was ${(data.occupancyRate * 100).toFixed(1)}%.`;\n\nreturn [{\n  json: {\n    ...data,\n    executiveSummary,\n    reportUrl: `https://example-r2.invalid/reports/${new Date().toISOString().slice(0, 10)}.pdf`\n  }\n}];"
+      },
+      "id": "3",
+      "name": "Build Report Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const runStamp = $now.toISO();\n\nreturn [{\n  json: {\n    workflowName: 'monthly-reports',\n    trigger: 'cron',\n    outcome: 'success',\n    landlordId: $json.landlordId,\n    correlationId: $execution.id,\n    idempotencyKey: `monthly-reports:${runStamp}:${$execution.id}`,\n    details: {\n      reportUrl: $json.reportUrl,\n      rentCollected: $json.rentCollected,\n      maintenanceCost: $json.maintenanceCost,\n      occupancyRate: $json.occupancyRate,\n      alerts: $json.alerts,\n      runAt: runStamp\n    }\n  }\n}];"
+      },
+      "id": "4",
+      "name": "Build Callback Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.N8N_APP_CALLBACK_URL || $env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000') + '/api/webhooks/n8n' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.N8N_CALLBACK_SECRET || '' }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "5",
+      "name": "HTTP - Callback to App",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        20,
+        240
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger - Daily 6AM (Set to monthly in production)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate KPI Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate KPI Data": {
+      "main": [
+        [
+          {
+            "node": "Build Report Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Report Payload": {
+      "main": [
+        [
+          {
+            "node": "Build Callback Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Callback Summary": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Callback to App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "5dd77d34-b3c2-47ec-8c90-95a8a0302025",
+  "meta": {
+    "instanceId": "re-saas"
+  },
+  "id": "monthly-reports-workflow",
+  "pinData": {}
+}
