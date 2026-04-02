@@ -13,6 +13,7 @@ import {
   Wrench,
   Zap,
   BarChart3,
+  SlidersHorizontal,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { href: "/payments",    label: "Payments",    icon: CreditCard },
   { href: "/maintenance", label: "Maintenance", icon: Wrench },
   { href: "/automations", label: "Automations", icon: Zap },
+  { href: "/settings",    label: "Settings",    icon: SlidersHorizontal },
   { href: "/reports",     label: "Reports",     icon: BarChart3 },
 ];
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PricingSection } from "@/components/marketing/pricing-section";
 
 export default function HomePage() {
   return (
@@ -9,6 +10,9 @@ export default function HomePage() {
             AI Property Manager
           </p>
           <div className="hidden gap-2 sm:flex">
+            <Link href="/pricing" className="rounded-full border border-[var(--sand-200)] px-4 py-2 text-sm font-medium text-[var(--ink-700)] hover:bg-white">
+              Pricing
+            </Link>
             <Link href="/sign-in" className="rounded-full border border-[var(--sand-200)] px-4 py-2 text-sm font-medium text-[var(--ink-700)] hover:bg-white">
               Sign in
             </Link>
@@ -55,6 +59,8 @@ export default function HomePage() {
             </article>
           ))}
         </section>
+
+        <PricingSection />
       </div>
     </main>
   );

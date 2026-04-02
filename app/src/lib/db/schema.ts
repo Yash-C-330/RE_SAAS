@@ -247,6 +247,29 @@ export const tenantPlanQuotas = pgTable(
   })
 );
 
+export const landlordPreferences = pgTable(
+  "landlord_preferences",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    landlordId: uuid("landlord_id")
+      .references(() => landlords.id, { onDelete: "cascade" })
+      .notNull(),
+    smsLimit: integer("sms_limit").notNull().default(250),
+    emailLimit: integer("email_limit").notNull().default(500),
+    aiTokenLimit: integer("ai_token_limit").notNull().default(250000),
+    emailNotificationsEnabled: boolean("email_notifications_enabled").notNull().default(true),
+    smsNotificationsEnabled: boolean("sms_notifications_enabled").notNull().default(true),
+    bankLinkConfirmationPhrase: text("bank_link_confirmation_phrase")
+      .notNull()
+      .default("I understand this bank account will be used for rent collection"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => ({
+    landlordIdUnique: uniqueIndex("landlord_preferences_landlord_uq").on(table.landlordId),
+  })
+);
+
 export const propertiesRelations = relations(properties, ({ one, many }) => ({
   landlord: one(landlords, {
     fields: [properties.landlordId],
